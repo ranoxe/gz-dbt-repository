@@ -1,55 +1,68 @@
+# schema.yml
+
 version: 2
 
 sources:
-  - name: raw
-    schema: gz_raw_data
-    description: "Raw data from Greenweez e-commerce platform"
+  # 'sources' est la section où vous définissez vos sources de données brutes (raw data).
+  - name: raw # Le nom logique du groupe de sources (utilisé pour les référencer avec {{ source('raw', '...') }}).
+    schema: gz_raw_data # Le nom du schéma (dataset) dans votre Data Warehouse (BigQuery ici) où se trouvent les tables brutes.
+
     tables:
-      - name: sales
-        identifier: raw_gz_sales
-        description: "Sales of Greenweez - we have one row per product_id found in each orders_id"
-      # Freshness testing - make sure to fill in the ...
-        loaded_at_field: "CAST(date_date AS TIMESTAMP)"
+      # --- TABLE 'sales' ---
+      - name: sales # Le nom court pour référencer la table.
+        identifier: raw_gz_sales # Le nom réel de la table dans le schéma 'gz_raw_data'.
+        description: sales of Greenweez / we have one row per product_id found in each orders_id # Description de la table.
+
+        # Test de fraîcheur (Freshness Test) : Vérifie si la donnée est trop ancienne.
+        loaded_at_field: "CAST(date_date AS TIMESTAMP)" # La colonne à utiliser pour déterminer la date de la dernière ligne. On la caste en TIMESTAMP pour dbt.
         freshness:
-           warn_after: {count: 90,period: day }
+          warn_after: { count: 90, period: day } # Émet un AVERTISSEMENT (warning) si la dernière donnée est plus vieille que 90 jours.
+
         columns:
           - name: date_date
-            description: "Date of purchase"
+            description: date of purchase
           - name: orders_id
-            description: "Unique identifier of the order"
-            tests :
-             - not_null
+            description: foreign key to ship
           - name: pdt_id
-            description: "Unique identifier of the product"
+            description: foreign key to product
           - name: revenue
-            description: "Total revenue of the order line"
+            description: the amount paid by the customer to purchase the product. revenue = quantity * selling_price
           - name: quantity
-            description: "Number of products purchased"
-            
+            description: the quantity of products purchased for a given order
+
+        # Tests au niveau de la table (pour la clé primaire composite de 'sales').
+        tests:
+          # Clé primaire composite (orders_id + pdt_id) : Chaque ligne doit être unique pour cette combinaison.
+          # L'utilisation de || '-' || est une astuce SQL pour concaténer les colonnes pour le test `unique`.
+          - unique:
+              column_name: "(orders_id || '-' || pdt_id)"
+
+      # --- TABLE 'product' ---
       - name: product
         identifier: raw_gz_product
-        description: "Products of Greenweez"
+        description: products of Greenweez
         columns:
           - name: products_id
-            description: "Unique identifier of the product (primary key)"
+            description: Primary key
             tests:
-              - unique
-              - not_null
+              - unique # Teste l'unicité : assure que chaque 'products_id' apparaît une seule fois.
+              - not_null # Teste l'existence : assure que 'products_id' n'est jamais NULL.
           - name: purchase_price
-            description: "Purchase price of the product"
-            
+            description: the purchase price of the product
+
+      # --- TABLE 'ship' ---
       - name: ship
         identifier: raw_gz_ship
-        description: "Shipping information for Greenweez orders"
+        description: shipping data for Greenweez orders
         columns:
           - name: orders_id
-            description: "Unique identifier of the order (primary key)"
+            description: Primary key
             tests:
-              - unique
-              - not_null
+              - unique # Teste l'unicité de la clé primaire.
+              - not_null # Teste l'existence de la clé primaire.
           - name: shipping_fee
-            description: "Fee charged to customer for shipping"
-          - name: logcost
-            description: "Logistic cost of shipping"
+            description: the price the customer pays for shipping
+          - name: log_cost
+            description: the cost of preparing the parcel in the distribution centre/warehouse
           - name: ship_cost
-            description: "Actual shipping cost"
+            description: shipping cost paid by Greenweez to the carrier/logistics provider
